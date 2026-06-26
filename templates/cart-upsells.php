@@ -106,11 +106,50 @@ if ( $popsi_cart_show_upsells && ( ! $popsi_cart_is_empty || $popsi_cart_show_on
 										?>
 										<div class="bc-upsell-select-wrap">
 											<select class="bc-upsell-select" data-product-id="<?php echo esc_attr( get_the_ID() ); ?>">
-												<?php foreach ( $popsi_cart_product_variations as $popsi_cart_v ) : ?>
-													<option value="<?php echo esc_attr( $popsi_cart_v['variation_id'] ); ?>">
-														<?php echo esc_html( implode( ' / ', array_values( $popsi_cart_v['attributes'] ) ) ); ?>
-													</option>
-												<?php endforeach; ?>
+												<?php 
+												// Debug: Check product attributes
+												$product_attributes = $product->get_variation_attributes();
+												echo '<!-- Product attributes: ' . print_r( $product_attributes, true ) . ' -->';
+												
+												// Work directly with existing variations
+												foreach ( $popsi_cart_product_variations as $variation ) :
+													// Get the attributes for this variation
+													$variation_attributes = $variation['attributes'];
+													
+													// Prepare display attributes and option data
+													$display_attributes = array();
+													$option_attributes = array();
+													
+													foreach ( $variation_attributes as $attr_key => $attr_value ) {
+														// For display, include non-empty values
+														if ( ! empty( $attr_value ) ) {
+															$display_attributes[] = $attr_value;
+														}
+														
+														// For data attributes, include all attributes (even empty ones)
+														// This ensures required fields like Logo are properly handled
+														$option_attributes[$attr_key] = $attr_value;
+													}
+													
+													// Skip if we don't have any display attributes
+													if ( empty( $display_attributes ) ) {
+														continue;
+													}
+													
+													$matching_variation_id = $variation['variation_id'];
+													
+													if ( $matching_variation_id ) :
+														?>
+														<option value="<?php echo esc_attr( $matching_variation_id ); ?>" 
+															data-attributes="<?php echo esc_attr( wp_json_encode( $option_attributes ) ); ?>">
+															<?php 
+															echo esc_html( implode( ' / ', $display_attributes ) );
+															?>
+														</option>
+														<?php
+													endif;
+												endforeach;
+												?>
 											</select>
 											<span class="bc-upsell-select-icon">
 												<?php

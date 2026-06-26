@@ -387,7 +387,37 @@ class Popsi_Cart_Drawer {
 			}
 			$this->ajax_get_cart();
 		} else {
-			wp_send_json_error( array( 'error' => true ) );
+			// Capture WooCommerce errors and notices
+			$error_messages = array();
+			
+			// Get all WooCommerce notices
+			if ( function_exists( 'wc_get_notices' ) ) {
+				$notices = wc_get_notices( 'error' );
+				if ( ! empty( $notices ) ) {
+					foreach ( $notices as $notice ) {
+						if ( isset( $notice['notice'] ) ) {
+							$error_messages[] = $notice['notice'];
+						}
+					}
+					// Clear the notices after capturing them
+					wc_clear_notices();
+				}
+			}
+			
+			// If no specific errors captured, try to get validation errors
+			if ( empty( $error_messages ) && ! $passed_validation ) {
+				$error_messages[] = 'Product validation failed. Please check your selection.';
+			}
+			
+			// If still no errors, provide a generic message
+			if ( empty( $error_messages ) ) {
+				$error_messages[] = 'Unable to add product to cart. Please try again.';
+			}
+			
+			wp_send_json_error( array( 
+				'error' => true,
+				'messages' => $error_messages 
+			) );
 		}
 	}
 

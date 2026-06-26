@@ -320,6 +320,28 @@
 
         if (this.selectedVariations[id]) {
           formData.append("variation_id", this.selectedVariations[id]);
+
+          // Get selected option to extract attribute data
+          const select = document.querySelector(
+            `.bc-upsell-select[data-product-id="${id}"]`,
+          );
+          if (select && select.selectedOptions[0]) {
+            const selectedOption = select.selectedOptions[0];
+            const attributeData = selectedOption.dataset.attributes;
+
+            if (attributeData) {
+              try {
+                const attributes = JSON.parse(attributeData);
+                Object.keys(attributes).forEach((attrKey) => {
+                  if (attributes[attrKey] && attributes[attrKey] !== "Any") {
+                    formData.append(attrKey, attributes[attrKey]);
+                  }
+                });
+              } catch (e) {
+                console.log("Error parsing attribute data:", e);
+              }
+            }
+          }
         }
 
         const response = await fetch(popsiCartData.ajax_url, {
@@ -329,6 +351,24 @@
         const res = await response.json();
         if (res.success) {
           this.updateCartUI(res.data);
+        } else {
+          console.log("Upsell add to cart failed");
+
+          // Log detailed error messages from WooCommerce
+          if (
+            res.data &&
+            res.data.messages &&
+            Array.isArray(res.data.messages)
+          ) {
+            console.log("WooCommerce error messages:");
+            res.data.messages.forEach((message, index) => {
+              console.log(`Error ${index + 1}:`, message);
+            });
+          } else if (res.data && typeof res.data === "string") {
+            console.log("Error message:", res.data);
+          } else {
+            console.log("Unknown error occurred");
+          }
         }
       } catch (error) {
         console.error(error);
