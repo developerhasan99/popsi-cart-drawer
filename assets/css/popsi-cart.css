@@ -562,6 +562,12 @@ body.admin-bar .bc-drawer-wrap .bc-drawer-panel {
   display: flex;
   gap: 8px;
 }
+.bc-drawer-wrap .bc-upsell-variation-selects {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+}
 .bc-drawer-wrap .bc-upsell-select-wrap {
   position: relative;
   flex: 1;

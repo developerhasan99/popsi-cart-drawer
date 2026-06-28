@@ -11,7 +11,152 @@
     refreshTimer: null,
     isUpdatingUI: false,
     selectedVariations: {},
+    selectedVariationAttributes: {},
     upsellPrices: {},
+    upsellVariations: {},
+
+    getUpsellItem(productId) {
+      return document.querySelector(`.bc-upsell-item[data-id="${productId}"]`);
+    },
+
+    getUpsellAttributeSelects(productId) {
+      const item = this.getUpsellItem(productId);
+      if (!item) return [];
+
+      return Array.from(
+        item.querySelectorAll(`.bc-upsell-select[data-product-id="${productId}"]`),
+      );
+    },
+
+    collectUpsellAttributeSelections(productId) {
+      const selections = {};
+
+      this.getUpsellAttributeSelects(productId).forEach((select) => {
+        selections[select.dataset.attributeKey] = select.value || "";
+      });
+
+      return selections;
+    },
+
+    parseUpsellVariations(item) {
+      if (!item || !item.dataset.variations) return [];
+
+      try {
+        const variations = JSON.parse(item.dataset.variations);
+        return Array.isArray(variations) ? variations : [];
+      } catch (error) {
+        console.log("Error parsing variation data:", error);
+        return [];
+      }
+    },
+
+    isVariationMatch(variationAttributes, selectedAttributes) {
+      return Object.keys(selectedAttributes).every((attrKey) => {
+        const selectedValue = selectedAttributes[attrKey] || "";
+        if (!selectedValue) return true;
+
+        const variationValue = variationAttributes[attrKey] || "";
+        return !variationValue || variationValue === selectedValue;
+      });
+    },
+
+    findMatchingVariation(productId, selectedAttributes) {
+      const variations = this.upsellVariations[productId] || [];
+
+      return (
+        variations.find((variation) => {
+          if (!variation || !variation.attributes) return false;
+
+          return this.isVariationMatch(variation.attributes, selectedAttributes);
+        }) || null
+      );
+    },
+
+    updateUpsellPrice(productId, variationId = "") {
+      const item = this.getUpsellItem(productId);
+      if (!item) return;
+
+      const priceDisplay = item.querySelector(".bc-upsell-price");
+      if (!priceDisplay) return;
+
+      if (
+        priceDisplay &&
+        this.upsellPrices[productId] &&
+        variationId &&
+        this.upsellPrices[productId][variationId]
+      ) {
+        priceDisplay.innerHTML = this.upsellPrices[productId][variationId];
+      }
+    },
+
+    updateUpsellAddButton(productId, hasMatch, isComplete) {
+      const item = this.getUpsellItem(productId);
+      if (!item) return;
+
+      const button = item.querySelector(".bc-upsell-add");
+      if (!button) return;
+
+      button.disabled = !hasMatch || !isComplete;
+      button.style.opacity = !hasMatch || !isComplete ? "0.6" : "";
+      button.style.cursor = !hasMatch || !isComplete ? "not-allowed" : "";
+    },
+
+    updateUpsellOptionAvailability(productId) {
+      const variations = this.upsellVariations[productId] || [];
+      const selects = this.getUpsellAttributeSelects(productId);
+      const currentSelections = this.collectUpsellAttributeSelections(productId);
+
+      selects.forEach((select) => {
+        const attributeKey = select.dataset.attributeKey;
+
+        Array.from(select.options).forEach((option) => {
+          if (!option.value) {
+            option.disabled = false;
+            return;
+          }
+
+          const candidateSelections = {
+            ...currentSelections,
+            [attributeKey]: option.value,
+          };
+
+          option.disabled = !variations.some((variation) =>
+            this.isVariationMatch(variation.attributes || {}, candidateSelections),
+          );
+        });
+      });
+    },
+
+    syncUpsellVariation(productId) {
+      const selectedAttributes = this.collectUpsellAttributeSelections(productId);
+      const hasEmptySelection = Object.values(selectedAttributes).some(
+        (value) => !value,
+      );
+
+      this.selectedVariationAttributes[productId] = selectedAttributes;
+      this.updateUpsellOptionAvailability(productId);
+
+      if (hasEmptySelection) {
+        this.selectedVariations[productId] = "";
+        this.updateUpsellAddButton(productId, false, false);
+        return;
+      }
+
+      const matchedVariation = this.findMatchingVariation(
+        productId,
+        selectedAttributes,
+      );
+
+      this.selectedVariations[productId] = matchedVariation
+        ? String(matchedVariation.id)
+        : "";
+
+      this.updateUpsellPrice(
+        productId,
+        matchedVariation ? String(matchedVariation.id) : "",
+      );
+      this.updateUpsellAddButton(productId, Boolean(matchedVariation), true);
+    },
 
     init() {
       const settings = popsiCartData.settings || {};
@@ -129,20 +274,7 @@
           if (e.target.classList.contains("bc-upsell-select")) {
             const select = e.target;
             const productId = select.dataset.productId;
-            this.selectedVariations[productId] = select.value;
-
-            // Update price display if needed
-            const priceDisplay = select
-              .closest(".bc-upsell-item")
-              .querySelector(".bc-upsell-price");
-            if (
-              priceDisplay &&
-              this.upsellPrices[productId] &&
-              this.upsellPrices[productId][select.value]
-            ) {
-              priceDisplay.innerHTML =
-                this.upsellPrices[productId][select.value];
-            }
+            this.syncUpsellVariation(productId);
           }
         });
       }
@@ -269,15 +401,21 @@
 
     initDynamicItems() {
       const upsellItems = document.querySelectorAll(
-        ".bc-upsell-item[data-prices]",
+        ".bc-upsell-item[data-id]",
       );
       upsellItems.forEach((item) => {
         const id = item.dataset.id;
         try {
-          this.upsellPrices[id] = JSON.parse(item.dataset.prices);
-          const variationSelect = item.querySelector(".bc-upsell-select");
-          if (variationSelect) {
-            this.selectedVariations[id] = variationSelect.value;
+          this.upsellPrices[id] = item.dataset.prices
+            ? JSON.parse(item.dataset.prices)
+            : {};
+          this.upsellVariations[id] = this.parseUpsellVariations(item);
+
+          const variationSelects = this.getUpsellAttributeSelects(id);
+          if (variationSelects.length) {
+            this.syncUpsellVariation(id);
+          } else {
+            this.selectedVariations[id] = "";
           }
         } catch (e) {}
       });
@@ -320,28 +458,18 @@
 
         if (this.selectedVariations[id]) {
           formData.append("variation_id", this.selectedVariations[id]);
+        }
 
-          // Get selected option to extract attribute data
-          const select = document.querySelector(
-            `.bc-upsell-select[data-product-id="${id}"]`,
-          );
-          if (select && select.selectedOptions[0]) {
-            const selectedOption = select.selectedOptions[0];
-            const attributeData = selectedOption.dataset.attributes;
+        if (this.selectedVariationAttributes[id]) {
+          Object.keys(this.selectedVariationAttributes[id]).forEach((attrKey) => {
+            const attrValue = this.selectedVariationAttributes[id][attrKey];
+            if (!attrValue) return;
 
-            if (attributeData) {
-              try {
-                const attributes = JSON.parse(attributeData);
-                Object.keys(attributes).forEach((attrKey) => {
-                  if (attributes[attrKey] && attributes[attrKey] !== "Any") {
-                    formData.append(attrKey, attributes[attrKey]);
-                  }
-                });
-              } catch (e) {
-                console.log("Error parsing attribute data:", e);
-              }
-            }
-          }
+            formData.append(attrKey, String(attrValue));
+          });
+        } else if ((this.upsellVariations[id] || []).length > 0) {
+          this.setLoading(false);
+          return;
         }
 
         const response = await fetch(popsiCartData.ajax_url, {

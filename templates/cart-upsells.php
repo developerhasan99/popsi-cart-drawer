@@ -58,21 +58,75 @@ if ( $popsi_cart_show_upsells && ( ! $popsi_cart_is_empty || $popsi_cart_show_on
 					global $product;
 					$popsi_cart_upsell_img = wp_get_attachment_image_url( $product->get_image_id(), 'thumbnail' );
 
-					$popsi_cart_prices_json        = '';
-					$popsi_cart_product_variations = array();
+					$popsi_cart_prices_json          = '';
+					$popsi_cart_variations_json      = '';
+					$popsi_cart_product_variations   = array();
+					$popsi_cart_attribute_selects    = array();
+					$popsi_cart_default_attributes   = array();
 					if ( $product->is_type( 'variable' ) ) {
-						$popsi_cart_p_map              = array();
-						$popsi_cart_product_variations = $product->get_available_variations();
+						$popsi_cart_p_map               = array();
+						$popsi_cart_variations_payload  = array();
+						$popsi_cart_product_variations  = $product->get_available_variations();
+						$popsi_cart_parent_attributes   = $product->get_attributes();
+						$popsi_cart_variation_values    = $product->get_variation_attributes();
+						$popsi_cart_default_attributes  = $product->get_default_attributes();
+
+						foreach ( $popsi_cart_parent_attributes as $popsi_cart_parent_attribute ) {
+							if ( ! $popsi_cart_parent_attribute->get_variation() ) {
+								continue;
+							}
+
+							$popsi_cart_attr_name    = $popsi_cart_parent_attribute->get_name();
+							$popsi_cart_attr_key     = 'attribute_' . sanitize_title( $popsi_cart_attr_name );
+							$popsi_cart_attr_options = $popsi_cart_variation_values[ $popsi_cart_attr_name ] ?? array();
+							$popsi_cart_select_items = array();
+
+							foreach ( $popsi_cart_attr_options as $popsi_cart_attr_option ) {
+								$popsi_cart_option_label = $popsi_cart_attr_option;
+
+								if ( taxonomy_exists( $popsi_cart_attr_name ) ) {
+									$popsi_cart_attr_term = get_term_by( 'slug', $popsi_cart_attr_option, $popsi_cart_attr_name );
+									if ( $popsi_cart_attr_term && ! is_wp_error( $popsi_cart_attr_term ) ) {
+										$popsi_cart_option_label = $popsi_cart_attr_term->name;
+									}
+								}
+
+								$popsi_cart_select_items[] = array(
+									'value' => $popsi_cart_attr_option,
+									'label' => $popsi_cart_option_label,
+								);
+							}
+
+							$popsi_cart_attribute_selects[] = array(
+								'key'     => $popsi_cart_attr_key,
+								'name'    => $popsi_cart_attr_name,
+								'label'   => wc_attribute_label( $popsi_cart_attr_name, $product ),
+								'options' => $popsi_cart_select_items,
+							);
+						}
+
 						foreach ( $popsi_cart_product_variations as $popsi_cart_v ) {
 							$popsi_cart_p_map[ $popsi_cart_v['variation_id'] ] = wp_strip_all_tags( wc_price( $popsi_cart_v['display_price'] ) );
+
+							if ( empty( $popsi_cart_v['variation_id'] ) || empty( $popsi_cart_v['attributes'] ) ) {
+								continue;
+							}
+
+							$popsi_cart_variations_payload[] = array(
+								'id'         => (int) $popsi_cart_v['variation_id'],
+								'attributes' => $popsi_cart_v['attributes'],
+							);
 						}
-						$popsi_cart_prices_json = wp_json_encode( $popsi_cart_p_map );
+						$popsi_cart_prices_json     = wp_json_encode( $popsi_cart_p_map );
+						$popsi_cart_variations_json = wp_json_encode( $popsi_cart_variations_payload );
 					}
 					?>
 					<div class="bc-upsell-item" data-id="<?php echo esc_attr( get_the_ID() ); ?>" 
 					<?php
 					if ( $popsi_cart_prices_json ) {
 						echo ' data-prices="' . esc_attr( $popsi_cart_prices_json ) . '"';}
+					if ( $popsi_cart_variations_json ) {
+						echo ' data-variations="' . esc_attr( $popsi_cart_variations_json ) . '"';}
 					?>
 					>
 						<div class="bc-upsell-img-wrap">
@@ -104,60 +158,33 @@ if ( $popsi_cart_show_upsells && ( ! $popsi_cart_is_empty || $popsi_cart_show_on
 								if ( $product->is_type( 'variable' ) ) :
 									if ( ! empty( $popsi_cart_product_variations ) ) :
 										?>
-										<div class="bc-upsell-select-wrap">
-											<select class="bc-upsell-select" data-product-id="<?php echo esc_attr( get_the_ID() ); ?>">
-												<?php 
-												// Debug: Check product attributes
-												$product_attributes = $product->get_variation_attributes();
-												echo '<!-- Product attributes: ' . print_r( $product_attributes, true ) . ' -->';
-												
-												// Work directly with existing variations
-												foreach ( $popsi_cart_product_variations as $variation ) :
-													// Get the attributes for this variation
-													$variation_attributes = $variation['attributes'];
-													
-													// Prepare display attributes and option data
-													$display_attributes = array();
-													$option_attributes = array();
-													
-													foreach ( $variation_attributes as $attr_key => $attr_value ) {
-														// For display, include non-empty values
-														if ( ! empty( $attr_value ) ) {
-															$display_attributes[] = $attr_value;
-														}
-														
-														// For data attributes, include all attributes (even empty ones)
-														// This ensures required fields like Logo are properly handled
-														$option_attributes[$attr_key] = $attr_value;
-													}
-													
-													// Skip if we don't have any display attributes
-													if ( empty( $display_attributes ) ) {
-														continue;
-													}
-													
-													$matching_variation_id = $variation['variation_id'];
-													
-													if ( $matching_variation_id ) :
-														?>
-														<option value="<?php echo esc_attr( $matching_variation_id ); ?>" 
-															data-attributes="<?php echo esc_attr( wp_json_encode( $option_attributes ) ); ?>">
-															<?php 
-															echo esc_html( implode( ' / ', $display_attributes ) );
-															?>
-														</option>
+										<div class="bc-upsell-variation-selects">
+											<?php foreach ( $popsi_cart_attribute_selects as $popsi_cart_attribute_select ) : ?>
+												<div class="bc-upsell-select-wrap">
+													<select
+														class="bc-upsell-select"
+														data-product-id="<?php echo esc_attr( get_the_ID() ); ?>"
+														data-attribute-key="<?php echo esc_attr( $popsi_cart_attribute_select['key'] ); ?>"
+													>
+														<option value=""><?php echo esc_html( sprintf( '-- %s --', $popsi_cart_attribute_select['label'] ) ); ?></option>
+														<?php foreach ( $popsi_cart_attribute_select['options'] as $popsi_cart_attribute_option ) : ?>
+															<option
+																value="<?php echo esc_attr( $popsi_cart_attribute_option['value'] ); ?>"
+																<?php selected( $popsi_cart_default_attributes[ sanitize_title( $popsi_cart_attribute_select['name'] ) ] ?? '', $popsi_cart_attribute_option['value'] ); ?>
+															>
+																<?php echo esc_html( $popsi_cart_attribute_option['label'] ); ?>
+															</option>
+														<?php endforeach; ?>
+													</select>
+													<span class="bc-upsell-select-icon">
 														<?php
-													endif;
-												endforeach;
-												?>
-											</select>
-											<span class="bc-upsell-select-icon">
-												<?php
-												$popsi_cart_icon_name  = 'chevron-down';
-												$popsi_cart_icon_class = '';
-												include POPSI_CART_PATH . 'templates/icons.php';
-												?>
-											</span>
+														$popsi_cart_icon_name  = 'chevron-down';
+														$popsi_cart_icon_class = '';
+														include POPSI_CART_PATH . 'templates/icons.php';
+														?>
+													</span>
+												</div>
+											<?php endforeach; ?>
 										</div>
 										<?php
 								endif;
@@ -181,5 +208,3 @@ if ( $popsi_cart_show_upsells && ( ! $popsi_cart_is_empty || $popsi_cart_show_on
 		</div>
 	<?php endif; ?>
 <?php endif; ?>
-
-<!-- TODO: fix variable product selection for any combination -->
