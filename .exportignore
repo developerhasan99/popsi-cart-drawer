@@ -5,9 +5,11 @@
 node_modules
 package.json
 package-lock.json
+yarn.lock
 tailwind.config.js
 assets/css/admin-tailwind.css
 export.sh
+phpcs.xml
 .exportignore
 .phpactor.json
 export/
