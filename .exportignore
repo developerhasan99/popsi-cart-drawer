@@ -9,6 +9,7 @@ tailwind.config.js
 assets/css/admin-tailwind.css
 export.sh
 .exportignore
+.phpactor.json
 export/
 *.log
 plugin-check-report.md
